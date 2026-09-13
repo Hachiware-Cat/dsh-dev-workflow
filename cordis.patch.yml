@@ -1,0 +1,15 @@
+# dsh-plugin-dev-workflow 的 bundle 层:插入本插件的 host 静态行。
+#
+# 本文件随包发布,由 package.json 的 `dsh.bundle.patch` 指向 —— 这是 DSH 生态里
+# 插件包声明"我该怎么被加载"的标准做法(可对照 node_modules/dsh-session-manager)。
+#
+# 这一行加载的是**入口**(`lib/index.js`,main 指向它):入口常驻并注册设置里的
+# 总开关「dev-workflow 预设」,功能本体(`lib/feature.js`)由它按开关值挂载 / 卸下。
+# 所以**组合里始终只需要这一行**,关掉开关不会动到组合,也不需要第二行。
+#
+# ⚠️ 它**只有**在本包被列进 profile 的 `dsh.profile.bundles` 时才会被应用。
+# ⚠️ 与手工写在 profile `cordis.patch.yml` 里的同 id insert 行**二选一** ——
+#    两条同时存在会把同一个插件挂两次(id 冲突 / 工具重复注册)。
+- insert:
+    - id: dev-workflow
+      name: dsh-plugin-dev-workflow

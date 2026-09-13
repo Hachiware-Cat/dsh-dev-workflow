@@ -1,0 +1,21 @@
+# 依赖
+node_modules/
+
+# 测试套件的临时工作区（smoke.mjs 默认用它当 TMP，见 DSH_SMOKE_TMP）
+.smoke-tmp/
+dsh-smoke-*/
+
+# 打包产物
+*.tgz
+package-lock.json
+
+# 日志与临时件
+*.log
+*.bak
+.tmp-*/
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

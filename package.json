@@ -1,0 +1,57 @@
+{
+  "name": "dsh-plugin-dev-workflow",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "dev-workflow:relay 互呼编排(插件自动投递)+ 流程状态工具 + 多档案 profile + 预设驱动的自动激活(dev-workflow 预设)+ 随包的 24 份技能(api-architect 与五个角色的联动技能,含 Java/Spring 与 Python/Django 两路后端栈)与 api_contract 契约工具;并带设置里的总开关「dev-workflow 预设」(lib/index.js 入口 + lib/client.js 卡片),关掉即卸下全部功能并隐藏预设 —— 只卸载运行中的功能,不删任何文件。使用看 使用说明.md。",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "cordis-plugin",
+    "agent",
+    "multi-agent",
+    "workflow",
+    "relay",
+    "subagent",
+    "skills",
+    "settings"
+  ],
+  "license": "MIT",
+  "main": "lib/index.js",
+  "scripts": {
+    "test": "node selftest.mjs && node smoke.mjs && node switch.selftest.mjs && node switch.smoke.mjs",
+    "prepublishOnly": "node selftest.mjs && node smoke.mjs && node switch.selftest.mjs && node switch.smoke.mjs"
+  },
+  "files": [
+    "lib",
+    "skills",
+    "cordis.patch.yml",
+    "使用说明.md"
+  ],
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./feature": {
+      "default": "./lib/feature.js"
+    },
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*"
+  }
+}
