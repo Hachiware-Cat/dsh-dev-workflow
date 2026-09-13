@@ -25,6 +25,8 @@
   "files": [
     "lib",
     "skills",
+    "preset",
+    "install.mjs",
     "cordis.patch.yml",
     "使用说明.md"
   ],

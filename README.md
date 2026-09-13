@@ -17,9 +17,11 @@ DSH（DeepSeek Harness）host 平面插件：**七个模型工具 + 24 份随包
 | 开关 | 预设名册 | 插件功能 |
 |---|---|---|
 | **开**（默认） | `dev-workflow` 显示在 Agent 预设与新会话的选择里 | 功能已挂载：七个工具 + 24 份随包技能可用 |
-| **关** | 预设目录改名搬到 `.agent-presets/.disabled/`，名册里不再显示 | 功能从进程里卸下：七个工具与随包技能当场注销，**功能模块也不会被 import** |
+| **关** | 预设目录改名搬到同根 `.disabled/`，名册里不再显示 | 功能从进程里卸下：七个工具与随包技能当场注销，**功能模块也不会被 import** |
 
 **「停用」不是「删除」**：插件包、预设文件、运行态（`~/.dsh/dev-workflow/`）全部原样留在磁盘上，重新打开即恢复。开关值写在 `~/.dsh/settings.yaml` 的 `dev-workflow:` 节，重启后保持。
+
+**两条硬要求**：① 只有**装了本插件**的 profile 才显示「工作流模式」预设与设置里的开关；② 开关**关着**就不显示它。名册的默认根 `$DSH_HOME/.agent-presets` 是所有 profile 共用的，而本插件按 profile 安装——作用域不一致，所以 `install.mjs` 会给该 profile 挂一个**私有名册根**（`<profile>/agent-presets/`，预设本体也在那儿，来源在仓库 `preset/dev-workflow/`）。见 [`使用说明.md` §8.0](./使用说明.md)。
 
 机制：组合里那一行 `id: dev-workflow` 加载的是 **入口 `lib/index.js`**（常驻——否则关掉之后没人能把开关打开），功能本体是 **`lib/feature.js`**，由入口按开关值挂载 / 卸下；开关卡片是 **`lib/client.js`**（浏览器半侧）。详见 [`使用说明.md` §零](./使用说明.md)。
 
@@ -118,7 +120,8 @@ relay action=status                                    # 看等待图 / 熔断 /
 **开工不需要先建任何文件**。激活门有四条来源：`docs/workflow/.active`、插件记忆、项目里已有的状态文档、
 以及 `dev-workflow` 预设（在该预设下开会话即自动开工）；`.active` 里写 `off` 压过一切，用户关得掉。
 
-> 「dev-workflow 预设」是**本机作者目录** `~/.dsh/.agent-presets/` 下的可选件，不在本包内；
+> 「dev-workflow 预设」是**每个 profile 私有**的可选件（`<profile>/agent-presets/dev-workflow/`），
+> 本体随包发布（`preset/dev-workflow/`，在 `files` 白名单里），由 `install.mjs` 铺进 profile；
 > 没有它插件照样可用，只是每次开工要显式 `kickoff` 或写一次 `.active`。
 > 设置里的**总开关**控制的就是它：关掉会把预设搬进同根的 `.disabled/`（名册里不再显示），
 > 打开再搬回来；插件功能本身也随开关挂载 / 卸下（见上文「总开关」）。

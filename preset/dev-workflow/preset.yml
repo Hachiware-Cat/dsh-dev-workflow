@@ -1,0 +1,4 @@
+name: 工作流模式
+description: 标准模式的全部能力，并绑定 dev-workflow 插件：进入本预设的会话会自动激活当前项目的多角色协作流程（relay 互呼 / 流程状态 / API 契约），无需 kickoff，也无需建 .active。
+order: 5
+
