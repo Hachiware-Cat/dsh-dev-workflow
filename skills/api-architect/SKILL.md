@@ -3,7 +3,7 @@ name: api-architect
 description: >
   专家级 API 设计:REST / GraphQL / gRPC / WebSocket 契约。用于 API 设计、端点设计、
   OpenAPI/Swagger、GraphQL schema、gRPC service、协议缓冲、API 版本化、错误结构、
-  分页、限流、OAuth/JWT 鉴权。随 dsh-plugin-dev-workflow 一起发布,
+  分页、限流、OAuth/JWT 鉴权。随 dsh-dev-workflow 一起发布,
   并由 api_contract 工具提供模板、lint 与质量清单。
 whenToUse: >
   当任务涉及接口契约(端点、请求/响应结构、错误码、版本策略、分页、限流、鉴权)时加载。
@@ -13,7 +13,7 @@ version: 0.0.1
 
 # API Architect(随 dev-workflow 发布)
 
-> 随 `dsh-plugin-dev-workflow` 一起发布:技能文本与五份参考件收进插件包
+> 随 `dsh-dev-workflow` 一起发布:技能文本与五份参考件收进插件包
 > (`skills/api-architect/`),可执行的一面由插件工具 `api_contract` 承接 ——
 > 选范式 / 取模板 / lint 校验 / 质检核对表 / 现状,五条都在那里。
 >

@@ -7,7 +7,7 @@ whenToUse: >
 version: 0.0.1
 ---
 
-> **随包说明**:本技能随 `dsh-plugin-dev-workflow` 一起发布(包内 `skills/impeccable/`),
+> **随包说明**:本技能随 `dsh-dev-workflow` 一起发布(包内 `skills/impeccable/`),
 > 只在**已激活**的 dev-workflow 项目里出现在 DSH 技能目录中。用 `skill` 工具加载它时给出的
 > "Base directory for this skill" 就是它的根目录,文中的相对路径(`references/`、`scripts/`、
 > `templates/`、`assets/`)都相对那里解析。

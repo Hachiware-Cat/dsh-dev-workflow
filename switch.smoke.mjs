@@ -74,7 +74,7 @@ await import('./lib/client.js')
 
 await test('bundle 以包名注册(与 package.json 的 name 一致)', () => {
   assert.ok(registration !== undefined, 'window.__ModuleLoader__.load 未被调用')
-  assert.equal(registration.id, 'dsh-plugin-dev-workflow')
+  assert.equal(registration.id, 'dsh-dev-workflow')
   assert.equal(typeof registration.factory, 'function')
 })
 
@@ -90,7 +90,7 @@ await test('导出 apply / inject / 命名空间常量', () => {
 
 await test('样式注入一次,类名前缀带插件标识', () => {
   assert.equal(styleTags.length, 1)
-  assert.equal(styleTags[0].dataset.plugin, 'dsh-plugin-dev-workflow')
+  assert.equal(styleTags[0].dataset.plugin, 'dsh-dev-workflow')
   assert.match(styleTags[0].textContent, /\.dwsw_switch\{/)
   assert.match(styleTags[0].textContent, /var\(--dsw-alias-brand-primary/)
 })

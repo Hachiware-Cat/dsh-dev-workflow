@@ -78,10 +78,10 @@ DSH（DeepSeek Harness）host 平面插件：**七个模型工具 + 24 份随包
 
 ```powershell
 # 推荐：DSH 官方入口。包内声明了 dsh.bundle，装完会自动加入 profile 的 bundles，不用手写激活行
-dsh plugin --profile web add dsh-plugin-dev-workflow        # 从 npm 装
+dsh plugin --profile web add dsh-dev-workflow        # 从 npm 装
 dsh plugin --profile web add .\dsh-dev-workflow             # 从本地克隆目录装
 
-dsh plugin --profile web remove dsh-plugin-dev-workflow     # 卸载
+dsh plugin --profile web remove dsh-dev-workflow     # 卸载
 ```
 
 装完 **重启 DSH** 生效 —— 插件在宿主启动时加载。
@@ -90,10 +90,10 @@ dsh plugin --profile web remove dsh-plugin-dev-workflow     # 卸载
 <summary>手工路线（npm / 离线 / 内网）</summary>
 
 ```powershell
-npm pack                                    # ① 产出 dsh-plugin-dev-workflow-<版本>.tgz
-$dst = "$env:USERPROFILE\.dsh\profiles\web\node_modules\dsh-plugin-dev-workflow"
+npm pack                                    # ① 产出 dsh-dev-workflow-<版本>.tgz
+$dst = "$env:USERPROFILE\.dsh\profiles\web\node_modules\dsh-dev-workflow"
 New-Item -ItemType Directory -Force -Path $dst | Out-Null
-tar -xzf .\dsh-plugin-dev-workflow-*.tgz -C $env:TEMP
+tar -xzf .\dsh-dev-workflow-*.tgz -C $env:TEMP
 Copy-Item "$env:TEMP\package\*" $dst -Recurse -Force   # ② 铺进 node_modules
 ```
 
@@ -102,7 +102,7 @@ Copy-Item "$env:TEMP\package\*" $dst -Recurse -Force   # ② 铺进 node_modules
 ```yaml
 - insert:
     - id: dev-workflow
-      name: ./node_modules/dsh-plugin-dev-workflow/lib/index.js
+      name: ./node_modules/dsh-dev-workflow/lib/index.js
 ```
 
 ⚠️ 别在 profile 目录里跑 `npm install` —— 那是个 pnpm 工程，要用包管理器就走上面 `dsh plugin`。

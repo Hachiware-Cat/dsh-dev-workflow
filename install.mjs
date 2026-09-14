@@ -3,7 +3,7 @@
  * 「工作流模式」预设按 profile 接好线。
  *
  * 做四件事:
- *   ① 复制包文件到 `<profile>/node_modules/dsh-plugin-dev-workflow/`;
+ *   ① 复制包文件到 `<profile>/node_modules/dsh-dev-workflow/`;
  *   ② 「工作流模式」预设本体铺到 `<profile>/agent-presets/dev-workflow/`(已存在则不动);
  *   ③ 在 profile 的 `cordis.patch.yml` 里写一段**受管段**,把「名册的 profile 私有根」
  *      与「插件行的 presetRoot」一起接上;
@@ -43,7 +43,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const PACKAGE_NAME = 'dsh-plugin-dev-workflow'
+const PACKAGE_NAME = 'dsh-dev-workflow'
 const SOURCE_DIR = dirname(fileURLToPath(import.meta.url))
 const FILES = [
   'package.json', 'cordis.patch.yml', 'README.md', '使用说明.md', 'LICENSE',
@@ -206,7 +206,7 @@ function renderManagedSection({ profileDir, baseConfig, defaultPreset, includeRo
 
   const parts = [
     MANAGED_BEGIN,
-    '# 本段由 dsh-plugin-dev-workflow/install.mjs 生成与维护,请勿手改。',
+    '# 本段由 dsh-dev-workflow/install.mjs 生成与维护,请勿手改。',
     '# 撤销:node install.mjs --uninstall(整段删除,文件里其余内容不动)。',
     '#',
     '# ① 名册根:本 profile 私有的预设根 —— 以及**为什么这里要换一个 id**。',
