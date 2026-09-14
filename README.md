@@ -33,9 +33,31 @@ DSH（DeepSeek Harness）host 平面插件：**七个模型工具 + 24 份随包
 |---|---|
 | 角色之间要互相喊话，靠模型记得调 `send_message` | `relay` 由插件**代投**，并渲染等待图 / 熔断 / 仲裁队列 |
 | 派角色要手写人格、工具集、工作目录 | `relay_spawn` 按档案注入 persona；只读档案自动收敛为只读工具集 |
+| 「需求最终稿交用户审核」只是一句人设，没机制托底 | **需求确认门**：未登记用户确认前，生产角色（`@be`/`@fe`/`@dba`…）不派活；确认钉在需求文档的 SHA256 上，改一版即作废 |
 | 流程状态靠模型口头描述，换个会话就断片 | `workflow_state_*` 落盘 `docs/workflow/流程状态.md`，随时可续跑 |
 | 接口契约各说各话 | `api_contract` 提供 OpenAPI / GraphQL / proto 模板与 lint（ERROR > 0 即 FAIL） |
 | 重启后什么都不认 | 等待关系 / 熔断窗口 / 角色绑定 / 台账 / 开工记忆全部落盘 |
+
+## 需求确认门
+
+pm 的人设一直写着「需求最终稿必须停下来交用户审核（唯一不受「开工授权」影响的硬关卡）」——
+但此前**没有任何机制托底**：门、校验、断言一个都没有。现在它由两半合成，**先记账、后上锁**：
+
+| 一半 | 落点 | 事实 |
+|---|---|---|
+| ② 记账 | `workflow_state_save requirementApproval={by:"user", note:"…"}` | 把「用户批准的是**哪一版**需求」记成结构化事实：需求文档（默认 `docs/workflow/项目经理.md`，档案可用 `requirementFile` 覆盖）的 **SHA256 指纹** + 时间 + 登记人 + 有没有外部证据 |
+| ① 上锁 | `kickoff` 与 `relay_spawn` 在「生产角色**首次**入场」这一格拦下 | 判据不是「某条待办勾没勾」（那是自证），而是 ② 那个指纹字段 |
+
+三条硬规矩：
+
+1. **指纹漂移即作废**：需求文档改过之后，上一句「用户已确认」自动失效，门重新关上（与 `api_contract` 的 spec 指纹同一套口径）。「确认」不是一次性的橡皮图章。
+2. **钥匙只在人手里**：登记只收**主会话**（DSH 眼里确切的 live runtime root）的调用。角色子会话连用户都问不到 —— `ask_user_question` 对「归属于另一个 agent 的子级」直接抛 `DELEGATED_CALLER` —— 所以它写的「用户已确认」没有事实可核，直接拒。主会话亲手派一个未确认的生产角色**放行但留痕**（回执一行 + 台账一笔「未确认即派活」），门挡的是「流程自动往前跑」，不是「人想立刻开工」。
+3. **必须留逃生阀**：`docs/workflow/.active` 里写一行 `approval=skip` 即放行（用户侧，不经模型）；配置 `requirementApproval: "track"`（只记账不拦）/ `"off"`（都不做）可整档降级；档案里给角色写 `awaitRequirement: false` 可逐角色豁免。误拦会让流程直接停摆，比「少拦一次」贵得多。
+
+「自证」与「有据可查」在回执里**分开说**：进程内观测到该会话为该项目调用过 `ask_user_question`，就记下时间戳；观测不到就照写「未观测到向用户提问，这条是自证的」。不拦，但绝不冒充有据可查。
+
+被门拦下的角色进 `kickoff` 回执的第四档 **`deferred`**（不是 `failed`：它没出错，只是还没到入场的时候）。
+协调者（它要写需求）、只读角色、以及 `@arch`（pm 人设要求可行性一律互呼它）不受门约束。
 
 ## 七个工具
 
@@ -113,9 +135,14 @@ Copy-Item "$env:TEMP\package\*" $dst -Recurse -Force   # ② 铺进 node_modules
 
 ```
 relay action=kickoff goal="给订单服务加一个取消接口"   # 一次派齐当前档案的角色，并投递开场指令
-workflow_state_status                                  # 看激活门 / 档案 / 待办
+workflow_state_status                                  # 看激活门 / 档案 / 待办 / 需求确认门
 relay action=status                                    # 看等待图 / 熔断 / 台账 / 技能可见数
 ```
+
+开工路径上，**生产角色要等需求确认**：`kickoff` 回执里 `deferred(N)` 就是它们，出路写在 `nextActions` 里。
+四条出路任选：让主会话确认后登记（`workflow_state_save requirementApproval={by:"user"}`）、
+用户在 `docs/workflow/.active` 写一行 `approval=skip`、配置降级 `requirementApproval: "track"`、
+或给角色写 `awaitRequirement: false`。
 
 **开工不需要先建任何文件**。激活门有四条来源：`docs/workflow/.active`、插件记忆、项目里已有的状态文档、
 以及 `dev-workflow` 预设（在该预设下开会话即自动开工）；`.active` 里写 `off` 压过一切，用户关得掉。
@@ -133,8 +160,8 @@ relay action=status                                    # 看等待图 / 熔断 /
 ## 开发
 
 ```powershell
-node selftest.mjs         # 276 条 —— 功能本体纯逻辑(lib/feature.js)
-node smoke.mjs            # 779 条 —— 功能本体端到端(从安装位置复跑时加 DSH_SMOKE_TMP=<可写目录>)
+node selftest.mjs         # 290 条 —— 功能本体纯逻辑(lib/feature.js)
+node smoke.mjs            # 811 条 —— 功能本体端到端(从安装位置复跑时加 DSH_SMOKE_TMP=<可写目录>)
 node switch.selftest.mjs  #  10 条 —— 总开关:预设搬迁 + 挂载/卸下 + "关闭时不 import"
 node switch.smoke.mjs     #  12 条 —— 开关卡片:假浏览器里真加载 bundle、点开关写设置
 ```

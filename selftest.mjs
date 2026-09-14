@@ -1544,6 +1544,95 @@ check('15.3 稳定可重复', hashText('abc') === hashText('abc') && hashText(''
     threw36 !== '' ? `抛了:${threw36}` : (missing36.length === 0 ? `八段标签齐全(${empty36.length} 字)` : `缺:${missing36.join(' / ')}`))
 }
 
+// ── 44. 需求确认门(② 记账 + ① 上锁的纯逻辑)─────────────────────────────
+{
+  const R = (v) => libmod.resolveRequirementMode(v)
+  check('44.1 档位解析:缺省/on 都是 enforce,track|off 各归各,缺省值认得出',
+    R(undefined).mode === 'enforce' && R('').mode === 'enforce' && R('enforce').mode === 'enforce'
+    && R('track').mode === 'track' && R('off').mode === 'off' && R(false).mode === 'off'
+    && R('TRACK').mode === 'track' && R(undefined).known === true,
+    JSON.stringify([R(undefined), R('track'), R('off'), R('nonsense')]))
+  check('44.2 认不出的值按 enforce,但 known=false —— 打错字的配置必须看得见,不许静默放行',
+    R('enfroce').mode === 'enforce' && R('enfroce').known === false && R('enfroce').raw === 'enfroce',
+    JSON.stringify(R('enfroce')))
+
+  const role = (id, extra) => Object.assign({ id }, extra || {})
+  check('44.3 受门约束的角色:协调者 / 只读 / @arch 豁免(架构师要在需求阶段在场,pm 人设要求可行性一律互呼它),其余生产角色受约束',
+    libmod.requirementGatedRole(role('be'), 'pm') === true
+    && libmod.requirementGatedRole(role('fe'), 'pm') === true
+    && libmod.requirementGatedRole(role('dba'), 'pm') === true
+    && libmod.requirementGatedRole(role('pm'), 'pm') === false
+    && libmod.requirementGatedRole(role('qa', { readonly: true }), 'pm') === false
+    && libmod.requirementGatedRole(role('arch'), 'pm') === false,
+    JSON.stringify(['pm', 'arch', 'be', 'fe', 'dba', 'qa'].map((id) => libmod.requirementGatedRole(role(id, id === 'qa' ? { readonly: true } : {}), 'pm'))))
+  check('44.4 档案里的 awaitRequirement 优先于内置口径(逐角色可覆盖)',
+    libmod.requirementGatedRole(role('be', { awaitRequirement: false }), 'pm') === false
+    && libmod.requirementGatedRole(role('arch', { awaitRequirement: true }), 'pm') === true,
+    JSON.stringify([libmod.requirementGatedRole(role('be', { awaitRequirement: false }), 'pm'), libmod.requirementGatedRole(role('arch', { awaitRequirement: true }), 'pm')]))
+
+  const D = (extra) => libmod.requirementDecision(Object.assign({ mode: 'enforce' }, extra || {}))
+  check('44.5 六种状态各判各的:off / skipped / approved / drifted / doc_missing / unregistered',
+    D({ mode: 'off' }).state === 'disabled'
+    && D({ escape: true }).state === 'skipped'
+    && D({ approval: { digest: 'aa' }, docExists: true, docDigest: 'aa' }).state === 'approved'
+    && D({ approval: { digest: 'aa' }, docExists: true, docDigest: 'bb' }).state === 'drifted'
+    && D({ approval: { digest: 'aa' }, docExists: false, docDigest: '' }).state === 'doc_missing'
+    && D({}).state === 'unregistered',
+    JSON.stringify([D({ mode: 'off' }).state, D({ escape: true }).state, D({ approval: { digest: 'a' }, docExists: true, docDigest: 'a' }).state, D({ approval: { digest: 'a' }, docExists: true, docDigest: 'b' }).state, D({ approval: { digest: 'a' } }).state, D({}).state]))
+  check('44.6 上锁只在 enforce 档:track 记而不断,off 连状态都不算;已登记 / 已放行都不锁',
+    D({}).locked === true
+    && D({ mode: 'track' }).locked === false
+    && D({ approval: { digest: 'a' }, docExists: true, docDigest: 'a' }).locked === false
+    && D({ escape: true }).locked === false
+    && D({ approval: { digest: 'a' }, docExists: true, docDigest: 'b' }).locked === true,
+    JSON.stringify([D({}).locked, D({ mode: 'track' }).locked, D({ escape: true }).locked, D({ approval: { digest: 'a' }, docExists: true, docDigest: 'b' }).locked]))
+  check('44.7 漂移要把两个指纹都带出来(只报"已漂移"而不给前后指纹,人没法核对改的是不是需求段)',
+    D({ approval: { digest: 'aaaa1111' }, docExists: true, docDigest: 'bbbb2222' }).digestWas === 'aaaa1111'
+    && D({ approval: { digest: 'aaaa1111' }, docExists: true, docDigest: 'bbbb2222' }).digestNow === 'bbbb2222',
+    JSON.stringify(D({ approval: { digest: 'aaaa1111' }, docExists: true, docDigest: 'bbbb2222' })))
+
+  const base = { docPath: 'docs/workflow/项目经理.md', docChars: 120, gatedRoles: ['be', 'fe'] }
+  const T = (s) => String(libmod.requirementStateText(Object.assign({}, base, s)))
+  check('44.8 同源文案:六种状态都要有自己那句话,且"未登记"必须给出三条出路(主会话登记 / 逃生阀 / 配置降级)',
+    T({ state: 'disabled' }).indexOf('记账已关') !== -1
+    && T({ state: 'skipped' }).indexOf('approval=skip') !== -1
+    && T({ state: 'approved', approval: { by: 'user', at: '2026-01-01 00:00:00', digest: 'abcdef1234567890' } }).indexOf('指纹 abcdef123456') !== -1
+    && T({ state: 'drifted', digestWas: 'aaaa', digestNow: 'bbbb' }).indexOf('已漂移') !== -1
+    && T({ state: 'doc_missing' }).indexOf('文档读不到') !== -1
+    && T({ state: 'unregistered' }).indexOf('requirementApproval={by:"user"}') !== -1
+    && T({ state: 'unregistered' }).indexOf('approval=skip') !== -1
+    && T({ state: 'unregistered' }).indexOf('track|off') !== -1,
+    [T({ state: 'disabled' }), T({ state: 'unregistered' })].join(' ‖ ').slice(0, 220))
+  check('44.9 未登记但在 track 档:文案必须明说"不拦"(否则读的人以为流程被卡住了)',
+    T({ state: 'unregistered', mode: 'track' }).indexOf('不会被拦') !== -1
+    && T({ state: 'unregistered', mode: 'enforce' }).indexOf('会被拦下') !== -1,
+    T({ state: 'unregistered', mode: 'track' }))
+  check('44.10 自证与有据可查必须分开说:没有证据时文案里就写着"自证",不许只印 by=user',
+    T({ state: 'approved', approval: { by: 'user', digest: 'a'.repeat(64) } }).indexOf('自证') !== -1
+    && T({ state: 'approved', approval: { by: 'user', digest: 'a'.repeat(64), evidence: 'ask_user_question@2026-01-01 00:00:00' } }).indexOf('ask_user_question@') !== -1,
+    T({ state: 'approved', approval: { by: 'user', digest: 'a'.repeat(64) } }))
+  check('44.11 认不出的配置值要在文案里点名(打错字的人看这一行就知道)',
+    T({ state: 'unregistered', mode: 'enforce', raw: 'enfroce', rawKnown: false }).indexOf('未识别') !== -1,
+    T({ state: 'unregistered', mode: 'enforce', raw: 'enfroce', rawKnown: false }))
+
+  // 文档小节 + 渲染进 buildDocument / summarize 的闭环
+  const rows = String(libmod.requirementSectionRows(Object.assign({}, base, {
+    state: 'approved', approval: { by: 'user', at: '2026-01-01 00:00:00', note: '用户说可以', digest: 'abcdef1234567890' },
+  })))
+  check('44.12 文档小节:登记后要写清"对象 + 指纹 + 自述 + 证据",并说明该文档一改就作废',
+    rows.indexOf('✅ 已登记') !== -1 && rows.indexOf('abcdef123456') !== -1
+    && rows.indexOf('用户说可以') !== -1 && rows.indexOf('自动作废') !== -1 && rows.indexOf('自证') !== -1,
+    rows.replace(/\n/g, ' ‖ ').slice(0, 200))
+  const doc = buildDocument(null, { header: { coordinator: 'pm' }, requirement: Object.assign({}, base, { state: 'unregistered', mode: 'enforce' }) })
+  check('44.13 「需求确认」小节默认就在初始模板里,传了视图就整段改写(不是缺一节,让人以为这门不存在)',
+    buildDocument(null, { header: { coordinator: 'pm' } }).indexOf('## 需求确认') !== -1
+    && doc.indexOf('## 需求确认') !== -1 && doc.indexOf('未登记') !== -1,
+    doc.split('\n').filter((l) => l.indexOf('需求确认') !== -1 || l.indexOf('未登记') !== -1).join(' | '))
+  check('44.14 summarize 读得回「需求确认」小节(跨会话续跑时"确认到哪一版"不能丢)',
+    summarize(doc).requirement.indexOf('未登记') !== -1,
+    String(summarize(doc).requirement).slice(0, 80))
+}
+
 console.log(`\n${'='.repeat(46)}\n结果: ${PASS} 通过 / ${FAIL} 失败`)
 if (failures.length > 0) {
   console.log('\n失败项:')

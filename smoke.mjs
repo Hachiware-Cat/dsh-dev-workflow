@@ -809,7 +809,16 @@ async function makePkgCopy(name, opts) {
   apply(ctx, {})
 
   const r1 = await runAs(ctx, agent, 'relay', { action: 'kickoff', root: koDir, goal: '做一个任务清单 API' })
-  check('17.1 一次调用派齐五角色', r1.status === 'started' && r1.spawned.length === 5, `${r1.status}/${JSON.stringify(r1.spawned.map((s) => s.role))}`)
+  /**
+   * 需求确认门(缺省 enforce)在**开工这条路上**拦的是"生产角色**首次**入场":
+   * 协调者(它要写需求)、架构师(pm 人设要求可行性一律互呼 @arch)、只读角色照派,
+   * @be/@fe 等生产角色进 deferred —— 用户确认需求最终稿之前不派它们。
+   * 门本身(登记 / 漂移 / 逃生阀 / 只收主会话)由 §43 专门取证,这里只锁"开工回执的形状"。
+   */
+  check('17.1 一次调用:协调者/架构师/只读角色就位,生产角色被需求确认门跳过(deferred,不是 failed)',
+    r1.status === 'started' && r1.spawned.length === 3 && r1.deferred.length === 2
+    && r1.spawned.map((s) => s.role).join(',') === 'pm,arch,qa' && r1.deferred.map((d) => d.role).join(',') === 'be,fe',
+    `${r1.status}/${JSON.stringify(r1.spawned.map((s) => s.role))}/deferred=${JSON.stringify(r1.deferred.map((d) => d.role))}`)
   check('17.2 协调者第一个派(回话入口先就位)', r1.spawned[0].role === 'pm' && r1.coordinator === 'pm', JSON.stringify(r1.spawned.map((s) => s.role)))
   check('17.3 qa 按档案收敛为只读', r1.spawned.filter((s) => s.role === 'qa')[0].readonly === true, JSON.stringify(r1.spawned))
   check('17.4 生成初始流程状态文档', typeof r1.documentText === 'string' && r1.documentText.indexOf('## 待办') !== -1 && r1.documentText.indexOf('① 项目经理 理需求') !== -1, String(r1.documentText).slice(0, 60))
@@ -820,14 +829,16 @@ async function makePkgCopy(name, opts) {
   check('17.8 kickoff 之后项目是 active', koSt.status === 'active', koSt.status)
 
   const r2 = await runAs(ctx, agent, 'relay', { action: 'kickoff', root: koDir, goal: '再来一次' })
-  check('17.9 重复 kickoff 不重派(幂等)', r2.status === 'already' && r2.skipped.length === 5 && r2.spawned.length === 0, `${r2.status}/${JSON.stringify(r2.skipped.map((s) => s.role))}`)
+  check('17.9 重复 kickoff 不重派(幂等):已登记的跳过、被门拦下的仍然 deferred',
+    r2.status === 'already' && r2.skipped.length === 3 && r2.spawned.length === 0 && r2.deferred.length === 2,
+    `${r2.status}/${JSON.stringify(r2.skipped.map((s) => s.role))}/deferred=${r2.deferred.length}`)
 
   const koDir2 = path.join(TMP, 'kickoff-proj2')
   fs.mkdirSync(path.join(koDir2, 'docs', 'workflow'), { recursive: true })
   const r3 = await runAs(ctx, agent, 'relay', { action: 'kickoff', root: koDir2, roles: ['be', '未知角色'] })
   check('17.10 roles 收窄 + 协调者自动补上', r3.roles.join(',') === 'pm,be' && r3.coordinatorAdded === true, JSON.stringify(r3.roles))
   check('17.11 不属于 profile 的角色被如实忽略', r3.rejectedRoles.join(',') === '未知角色', JSON.stringify(r3.rejectedRoles))
-  check('17.12 真只派了两个角色', r3.spawned.length === 2, String(r3.spawned.length))
+  check('17.12 真只派了协调者一个(生产角色 @be 被门拦下 → deferred)', r3.spawned.length === 1 && r3.deferred.length === 1 && r3.deferred[0].role === 'be', `${r3.spawned.length}/${r3.deferred.length}`)
 
   const r4 = await runAs(ctx, agent, 'relay', { action: 'kickoff', root: koDir2, profile: 'lean3', roles: ['qa'] })
   check('17.13 换档案派该档案的角色集(协调者自动补)', r4.profileId === 'lean3' && r4.roles.join(',') === 'pm,qa', JSON.stringify(r4.roles))
@@ -837,16 +848,18 @@ async function makePkgCopy(name, opts) {
   fs.writeFileSync(path.join(koDir, 'docs', 'workflow', '流程状态.md'), '# 流程状态\n\n## 待办\n- [ ] 已有内容\n', 'utf8')
   const r5 = await runAs(ctx, agent, 'relay', { action: 'kickoff', root: koDir, force: true })
   check('17.15 已有状态文档 → 不覆盖,只回 existingState', r5.existingState === 'docs/workflow/流程状态.md' && r5.documentText === undefined, `${String(r5.existingState)}/${String(r5.documentText).slice(0, 20)}`)
-  check('17.16 force=true 时重派(跳过逻辑可绕过)', r5.spawned.length === 5, String(r5.spawned.length))
+  check('17.16 force=true 时重派(跳过逻辑可绕过;被门拦下的两个仍 deferred)', r5.spawned.length === 3 && r5.deferred.length === 2, `${r5.spawned.length}/${r5.deferred.length}`)
 
   // 渲染层:开工回执要能一眼看懂
   const text = ctx._tool('relay').output.render({}, r1).map((b) => b.text).join('\n')
   check('17.17 回执列出每个角色的 agentId', text.indexOf('开工:profile=standard') !== -1 && text.indexOf('@pm') !== -1 && text.indexOf('child-pm') !== -1, text.split('\n').slice(0, 6).join(' | '))
   check('17.18 回执带初始流程状态文档', text.indexOf('-----BEGIN 流程状态.md-----') !== -1)
-  // 回执必须有 spawned/skipped/failed 三段计数 —— 能从计数直接判出"重派还是跳过"
-  check('17.19 回执分三段并带计数', text.indexOf('spawned(5):') !== -1 && text.indexOf('skipped(0):') !== -1 && text.indexOf('failed(0):') !== -1, text.split('\n').slice(0, 8).join(' | '))
+  // 回执必须有 spawned/skipped/failed/deferred 四段计数 —— 能从计数直接判出"重派还是跳过还是等确认"
+  check('17.19 回执分四段并带计数(spawned/skipped/failed/deferred)',
+    text.indexOf('spawned(3):') !== -1 && text.indexOf('skipped(0):') !== -1 && text.indexOf('failed(0):') !== -1 && text.indexOf('deferred(2):') !== -1,
+    text.split('\n').slice(0, 8).join(' | '))
   const text2 = ctx._tool('relay').output.render({}, r2).map((b) => b.text).join('\n')
-  check('17.20 跳过时三段计数如实', text2.indexOf('spawned(0):') !== -1 && text2.indexOf('skipped(5):') !== -1, text2.split('\n').slice(0, 8).join(' | '))
+  check('17.20 跳过时四段计数如实', text2.indexOf('spawned(0):') !== -1 && text2.indexOf('skipped(3):') !== -1 && text2.indexOf('deferred(2):') !== -1, text2.split('\n').slice(0, 8).join(' | '))
 
   // 整段 goal 原文不得塞进「待办」首条(一条待办能到 600 字)
   const longGoal = `${'很长的需求描述'.repeat(40)}\n第二行还有内容`
@@ -1705,6 +1718,12 @@ async function makePkgCopy(name, opts) {
   const spBeFG = await runAs(ctxFG, schedFG, 'relay_spawn', { root: projFG, role: 'be', prompt: '④ 冒名用例' })
   await runAs(ctxFG, schedFG, 'relay_spawn', { root: projFG, role: 'arch', prompt: '④ 冒名用例' })
   const sentBeforeFG = sent.length
+  /**
+   * 台账必须按**增量**比,不能比绝对值:`relay_spawn` 由调度者亲手派出一个
+   * "需求确认门"尚未放行的生产角色时会**留痕**(记一笔「绕过需求确认门」)——
+   * 那是**这次拒绝之前**就写下的,与本用例要证的"拒绝零副作用"无关。
+   */
+  const ledgerBeforeFG = (((readState25(process.env.DSH_HOME).projects || {})[`standard@${projFG}`] || {}).ledger) || []
   const forgedFG = await runAs(ctxFG, live[String(spBeFG.agentId)], 'relay', { action: 'send', root: projFG, from: 'pm', to: 'arch', msg: '④ 冒名:以 @be 的身份写 from=pm' })
   check('25.4 以 @be 身份显式写 from=pm 必须被拒 forged_from',
     forgedFG.status === 'forged_from' && forgedFG.forgedFrom === true
@@ -1712,9 +1731,9 @@ async function makePkgCopy(name, opts) {
     `status=${forgedFG.status} callerRole=${forgedFG.callerRole} declaredFrom=${forgedFG.declaredFrom}`)
   const slotFG = (readState25(process.env.DSH_HOME).projects || {})[`standard@${projFG}`] || {}
   check('25.5 拒绝必须零副作用(等待图未改写 / 台账没多行 / 没有任何投递)',
-    Object.keys(slotFG.waiting || {}).length === 0 && (slotFG.ledger || []).length === 0
+    Object.keys(slotFG.waiting || {}).length === 0 && (slotFG.ledger || []).length === ledgerBeforeFG.length
     && sent.length === sentBeforeFG,
-    `waiting=${JSON.stringify(slotFG.waiting)} ledger=${(slotFG.ledger || []).length} 新增投递=${sent.length - sentBeforeFG}`)
+    `waiting=${JSON.stringify(slotFG.waiting)} ledger=${(slotFG.ledger || []).length}(拒绝前 ${ledgerBeforeFG.length}) 新增投递=${sent.length - sentBeforeFG}`)
 
   // 25.6 force 必须走 boolTrue(provider 不强制 schema 的 boolean,模型会把 "true" 传成字符串)。
   //   `a.force !== true` 会静默降级成 exists:回执说"需要重派请传 force=true",而调用者刚写的就是它。
@@ -2825,17 +2844,20 @@ async function makePkgCopy(name, opts) {
     fs.mkdirSync(path.join(p, 'docs', 'workflow'), { recursive: true })
     if (o.gate !== null) {
       const head = o.gate || 'active'
-      fs.writeFileSync(path.join(p, 'docs', 'workflow', '.active'), `${head}\n${o.stateName ? `stateName=${o.stateName}\n` : ''}`, 'utf8')
+      // `skip: true` = 用户侧逃生阀(`approval=skip`)。本块审的是**显示面**,
+      // 不该被需求确认门(生产角色首次入场要等用户确认)顺带改写角色集 ——
+      // 门本身由 §43 专门取证。
+      fs.writeFileSync(path.join(p, 'docs', 'workflow', '.active'), `${head}\n${o.skip ? 'approval=skip\n' : ''}${o.stateName ? `stateName=${o.stateName}\n` : ''}`, 'utf8')
     }
     if (o.state) fs.writeFileSync(path.join(p, 'docs', 'workflow', '流程状态.md'), o.state, 'utf8')
     return p
   }
-  const proj37 = mkProj37('p37audit', { state: ['# 流程状态:p37', '', '## 遗留风险', '- p37-风险'].join('\n') })
+  const proj37 = mkProj37('p37audit', { skip: true, state: ['# 流程状态:p37', '', '## 遗留风险', '- p37-风险'].join('\n') })
   const proj37empty = mkProj37('p37empty')
   const proj37named = mkProj37('p37named', { stateName: '需求甲' })
   const proj37never = mkProj37('p37never', { gate: null })
   const proj37off = mkProj37('p37off', { gate: 'off' })
-  const proj37b = mkProj37('p37spawn')
+  const proj37b = mkProj37('p37spawn', { skip: true })
   const home37 = path.join(TMP, 'p37-home')
   fs.mkdirSync(path.join(home37, 'dev-workflow'), { recursive: true })
   process.env.DSH_HOME = home37
@@ -3949,6 +3971,181 @@ function presetDevice(tag, opts) {
     `judged=${judged44} 日志行=${logLines44.length} 落盘=${d44.stateText().indexOf('presetAuto') !== -1 ? '有' : '无'} | ${view44.slice(0, 150)}…`)
 
   d44.restore()
+}
+
+// ── 45. 需求确认门:② 记账(指纹 + 漂移 + 证据)+ ① 上锁(钥匙在主会话手里)──────
+{
+  const home0_45 = process.env.DSH_HOME
+  const mkProj45 = (name, opts) => {
+    const o = opts || {}
+    const p = path.join(TMP, name)
+    fs.mkdirSync(path.join(p, 'docs', 'workflow'), { recursive: true })
+    fs.writeFileSync(path.join(p, 'docs', 'workflow', '.active'), `${o.active || 'active'}\n`, 'utf8')
+    if (o.requirement !== undefined) fs.writeFileSync(path.join(p, 'docs', 'workflow', '项目经理.md'), o.requirement, 'utf8')
+    return p
+  }
+  const REQ1 = '# 需求\n\n## 需求清单\n- R1 建任务(P0 | 验收:POST /tasks 返回 201)\n'
+  const home45 = path.join(TMP, 'p45-home')
+  fs.mkdirSync(path.join(home45, 'dev-workflow'), { recursive: true })
+  process.env.DSH_HOME = home45
+  const ctx45 = mockCtx()
+  apply(ctx45, {})
+  const T45 = (name, out) => ctx45._tool(name).output.render({}, out).map((b) => b.text).join('\n')
+  const yes45 = (text, kw) => text.indexOf(kw) !== -1
+  const slot45 = (root) => (((JSON.parse(fs.readFileSync(path.join(home45, 'dev-workflow', 'state.json'), 'utf8')).projects) || {})[`standard@${root}`]) || {}
+  const sched45 = { id: 'sched-45', session: { header: { cwd: ROOT } } }
+  live['sched-45'] = sched45
+
+  // ①② 开工:生产角色被门拦下;回执四段 + 出路;主会话亲手派会留痕(不许静默绕过)
+  const pLock = mkProj45('p45lock')
+  const ko45 = await runAs(ctx45, sched45, 'relay', { action: 'kickoff', root: pLock, goal: '把需求确认门做出来' })
+  const koText45 = T45('relay', ko45)
+  check('45.1 开工路径:生产角色 @be/@fe **首次**入场被门拦下(deferred),协调者与只读角色照派 —— 需求没让用户看过之前不许开工',
+    ko45.spawned.length === 3 && ko45.deferred.length === 2
+    && ko45.deferred.map((d) => d.role).join(',') === 'be,fe'
+    && yes45(koText45, 'deferred(2):') && yes45(koText45, '等需求确认')
+    && yes45(koText45, '需求确认:**未登记**'),
+    `spawned=${ko45.spawned.length} deferred=${ko45.deferred.length} | ${(koText45.split('\n').filter((l) => l.indexOf('需求确认') !== -1)[0] || '').slice(0, 120)}`)
+  check('45.2 拦下时必须给**照做得到**的出路(主会话登记 / 用户写 approval=skip / 配置降级 / 逐角色豁免),而不是一句"禁止派活"',
+    Array.isArray(ko45.nextActions) && ko45.nextActions.length === 5
+    && ko45.nextActions.join(' ').indexOf('requirementApproval={by:"user"') !== -1
+    && ko45.nextActions.join(' ').indexOf('approval=skip') !== -1
+    && ko45.nextActions.join(' ').indexOf('track') !== -1
+    && yes45(koText45, '出路:'),
+    `${(ko45.nextActions || []).length} 条出路`)
+
+  // ③ 钥匙在主会话手里:角色子会话(pm)派不动生产角色,而主会话可以 —— 但会留一笔"绕过"台账
+  const spChild45 = await runAs(ctx45, live[String(ko45.spawned[0].agentId)], 'relay_spawn', { role: 'be', root: pLock, prompt: 'pm 想自己把 be 派起来' })
+  const spChildText45 = T45('relay_spawn', spChild45)
+  check('45.3 角色子会话(pm)派生产角色 → 被拒,且拒绝里写清"你打不开这道门":DSH 的 ask_user_question 对子级直接抛 DELEGATED_CALLER,所以子会话写的"用户已确认"没有事实可核 —— 门不能自证',
+    spChild45.status === 'requirement_pending' && !(slot45(pLock).roleAgents || {}).be
+    && yes45(spChildText45, 'DELEGATED_CALLER')
+    && yes45(spChildText45, '钥匙只在**主会话**')
+    && Array.isArray(spChild45.nextActions) && spChild45.nextActions.length === 5,
+    `status=${spChild45.status} 绑定=${(slot45(pLock).roleAgents || {}).be || '(无)'}`)
+  const spRoot45 = await runAs(ctx45, sched45, 'relay_spawn', { role: 'be', root: pLock, prompt: '主会话亲手派' })
+  const spRootText45 = T45('relay_spawn', spRoot45)
+  const bypassRow45 = (slot45(pLock).ledger || []).filter((r) => String(r.status).indexOf('绕过') !== -1 || String(r.summary).indexOf('绕过需求确认门') !== -1)
+  check('45.4 主会话亲手派 = 绕过这道门:**放行但绝不静默** —— 回执一行 + 台账一笔(门挡的是"流程自动往前跑",不是"人想立刻开工",而绕过必须可审计)',
+    spRoot45.status === 'spawned' && !!spRoot45.requirementBypass
+    && yes45(spRootText45, '绕过需求确认门') && bypassRow45.length === 1,
+    `status=${spRoot45.status} 台账绕过行=${bypassRow45.length}`)
+
+  // ④ 已入场的角色不再被拦(kickoff 的批量派活也一样):补救指引"relay_spawn 重派即可"必须照做得到
+  const koForce45 = await runAs(ctx45, sched45, 'relay', { action: 'kickoff', root: pLock, force: true })
+  check('45.5 已入场过的角色不再被拦(绑定/台账里有它就放行)—— 否则"重派即可"这条补救指引会变成假话;@fe 仍然 deferred',
+    koForce45.deferred.length === 1 && koForce45.deferred[0].role === 'fe'
+    && (koForce45.spawned.length + koForce45.skipped.length) === 4,
+    `spawned=${koForce45.spawned.length} skipped=${koForce45.skipped.length} deferred=${JSON.stringify(koForce45.deferred.map((d) => d.role))}`)
+
+  // ⑤⑥ 登记:文档不在 → 拒;角色子会话调 → 拒;主会话调 → 成,并钉住指纹 + 如实说"证据=自证"
+  const pApprove = mkProj45('p45approve', { requirement: REQ1 })
+  const svNoDoc45 = await runAs(ctx45, sched45, 'workflow_state_save', { root: pLock, requirementApproval: { by: 'user', note: '试着登记' } })
+  check('45.6 需求文档读不到时**拒绝登记**:批准一个不存在的文档等于把"确认"变成口号 —— 拒绝并给两条照做得到的路',
+    svNoDoc45.requirementRegistration && svNoDoc45.requirementRegistration.op === 'rejected'
+    && svNoDoc45.requirementRegistration.reason === 'doc_missing'
+    && !!svNoDoc45.requirementRegistration.nextActions,
+    JSON.stringify(svNoDoc45.requirementRegistration && svNoDoc45.requirementRegistration.reason))
+  const svChild45 = await runAs(ctx45, live[String(ko45.spawned[0].agentId)], 'workflow_state_save', { root: pApprove, requirementApproval: { by: 'user', note: 'pm 替用户说确认了' } })
+  check('45.7 角色子会话登记批准 → 被拒(delegated_caller),槽里一个字都不写 —— 这是"钥匙在人手里"的机械落点',
+    svChild45.requirementRegistration && svChild45.requirementRegistration.op === 'rejected'
+    && svChild45.requirementRegistration.reason === 'delegated_caller'
+    && !slot45(pApprove).requirement,
+    JSON.stringify(svChild45.requirementRegistration && svChild45.requirementRegistration.reason))
+  const svOk45 = await runAs(ctx45, sched45, 'workflow_state_save', { root: pApprove, requirementApproval: { by: 'user', note: '用户看了需求清单,说可以' } })
+  const svOkText45 = T45('workflow_state_save', svOk45)
+  const req45 = slot45(pApprove).requirement || {}
+  const { createHash: ch45 } = await import('node:crypto')
+  const wantDigest45 = ch45('sha256').update(REQ1, 'utf8').digest('hex')
+  check('45.8 主会话登记成功:指纹就是**需求最终稿那一批字节**的 SHA256(不是随手写的一句话)、落进台账、回执里把"已登记"与"自证"分开说',
+    svOk45.requirementRegistration.op === 'registered'
+    && String(req45.digest) === wantDigest45
+    && yes45(svOkText45, '已登记') && yes45(svOkText45, '自证')
+    && (slot45(pApprove).ledger || []).some((r) => String(r.to) === '(需求确认)'),
+    `digest=${String(req45.digest).slice(0, 12)}… 期望=${wantDigest45.slice(0, 12)}… 台账=${(slot45(pApprove).ledger || []).length} 行`)
+  check('45.9 登记后状态文档的「需求确认」小节整段改写(不是只活在插件状态里)—— 落盘面才看得见"确认的是哪一版"',
+    yes45(String(svOk45.documentText), '## 需求确认') && yes45(String(svOk45.documentText), '已登记')
+    && yes45(String(svOk45.documentText), String(req45.digest).slice(0, 12)),
+    String(svOk45.documentText).split('\n').filter((l) => l.indexOf('已登记') !== -1)[0] || '(没有已登记行)')
+
+  // ⑦ 登记之后门开了:kickoff 一次派齐五角色
+  const koOpen45 = await runAs(ctx45, sched45, 'relay', { action: 'kickoff', root: pApprove, goal: '确认过了,开工' })
+  check('45.10 登记之后门就开了:同一条 kickoff 一次派齐五个角色(deferred 为空),状态面报"已登记"',
+    koOpen45.spawned.length === 5 && koOpen45.deferred.length === 0
+    && yes45(T45('relay', koOpen45), '需求确认:已登记'),
+    `spawned=${koOpen45.spawned.length} deferred=${koOpen45.deferred.length}`)
+
+  // ⑧ 漂移:需求文档改过 → 上次那句"用户已确认"自动作废,门重新关上(复用 api lint 的指纹口径)
+  const pDrift = mkProj45('p45drift', { requirement: REQ1 })
+  await runAs(ctx45, sched45, 'workflow_state_save', { root: pDrift, requirementApproval: { by: 'user', note: '第一版确认' } })
+  fs.appendFileSync(path.join(pDrift, 'docs', 'workflow', '项目经理.md'), '- R2 追加一条需求(用户没见过这一版)\n', 'utf8')
+  const stDrift45 = await runAs(ctx45, sched45, 'workflow_state_status', { root: pDrift })
+  const koDrift45 = await runAs(ctx45, sched45, 'relay', { action: 'kickoff', root: pDrift, goal: '漂移后开工' })
+  check('45.11 指纹漂移:需求文档在登记后被改过 → 那句"用户已确认"自动作废、门重新关上(否则"确认"会变成一次性的、之后永久有效的橡皮图章)',
+    yes45(T45('workflow_state_status', stDrift45), '**已漂移**')
+    && koDrift45.deferred.map((d) => d.role).join(',') === 'be,fe'
+    && koDrift45.spawned.length === 3,
+    `deferred=${JSON.stringify(koDrift45.deferred.map((d) => d.role))} | ${(T45('workflow_state_status', stDrift45).split('\n').filter((l) => l.indexOf('需求确认') !== -1)[0] || '').slice(0, 120)}`)
+
+  // ⑨ 逃生阀(用户侧,不经模型)+ 配置降级两档
+  const pSkip = mkProj45('p45skip', { active: 'active\napproval=skip' })
+  const koSkip45 = await runAs(ctx45, sched45, 'relay', { action: 'kickoff', root: pSkip, goal: '用户放行' })
+  check('45.12 用户侧逃生阀:`.active` 写一行 approval=skip → 门放行,但状态面**不冒充**"用户已确认过需求"',
+    koSkip45.spawned.length === 5 && koSkip45.deferred.length === 0
+    && yes45(T45('relay', koSkip45), '已放行')
+    && yes45(T45('relay', koSkip45), '不冒充'),
+    `spawned=${koSkip45.spawned.length} | ${(T45('relay', koSkip45).split('\n').filter((l) => l.indexOf('需求确认') !== -1)[0] || '').slice(0, 120)}`)
+  const home45t = path.join(TMP, 'p45-home-track')
+  fs.mkdirSync(path.join(home45t, 'dev-workflow'), { recursive: true })
+  process.env.DSH_HOME = home45t
+  const ctx45t = mockCtx()
+  apply(ctx45t, { requirementApproval: 'track' })
+  const pTrack45 = mkProj45('p45track')
+  const koTrack45 = await runAs(ctx45t, sched45, 'relay', { action: 'kickoff', root: pTrack45, goal: '只记账不拦' })
+  process.env.DSH_HOME = home45
+  check('45.13 配置降级 track:照旧派齐五角色,但状态面如实写"未登记(只记账不拦)"—— 降级不是"看不见"',
+    koTrack45.spawned.length === 5 && koTrack45.deferred.length === 0
+    && yes45(T45('relay', koTrack45), '不会被拦'),
+    `spawned=${koTrack45.spawned.length} | ${(T45('relay', koTrack45).split('\n').filter((l) => l.indexOf('需求确认') !== -1)[0] || '').slice(0, 120)}`)
+  const ctx45off = mockCtx()
+  apply(ctx45off, { requirementApproval: 'off' })
+  const pOff45 = mkProj45('p45off')
+  const koOff45 = await runAs(ctx45off, sched45, 'relay', { action: 'kickoff', root: pOff45, goal: '整档关掉' })
+  check('45.14 配置降级 off:不拦也不记账,状态面直说"记账已关"',
+    koOff45.spawned.length === 5 && yes45(T45('relay', koOff45), '记账已关'),
+    `spawned=${koOff45.spawned.length}`)
+
+  // ⑩ 证据:主会话真的问过用户 → 登记时带上时间戳(自证 vs 有据可查,同一句话里分开说)
+  const askHandlers45 = (ctx45._handlers['tools/post-execute'] || [])
+  const pEvid = mkProj45('p45evid', { requirement: REQ1 })
+  // cwd = 项目根:证据键是「会话 + 项目根」,这样"在 A 项目问过"不会被拿去给 B 项目当证据
+  const schedEv45 = { id: 'sched-ev-45', session: { header: { cwd: pEvid } } }
+  live['sched-ev-45'] = schedEv45
+  for (const h of askHandlers45) await h({ name: 'ask_user_question', agent: schedEv45 }, { isError: false }, async () => {})
+  const svEvid45 = await runAs(ctx45, schedEv45, 'workflow_state_save', { root: pEvid, requirementApproval: { by: 'user', note: '问过了' } })
+  check('45.15 外部证据:观测到主会话为**这个项目**调用过 ask_user_question → 登记里带上时间戳(② 的天花板:by="user" 本身是自报,能对上一个外部事实才算"有据可查")',
+    svEvid45.requirementRegistration.op === 'registered'
+    && String(svEvid45.requirementRegistration.evidence).indexOf('ask_user_question@') === 0
+    && svEvid45.requirementRegistration.evidenceMissing === false
+    && yes45(T45('workflow_state_save', svEvid45), 'ask_user_question@'),
+    `evidence=${JSON.stringify(svEvid45.requirementRegistration.evidence)}`)
+  /**
+   * 反面:只有 **live runtime root** 的提问才算证据。子会话调 ask_user_question 本来就会被
+   * DSH 拒(`DELEGATED_CALLER`),把它也算成"问过用户"等于给自证开后门。
+   */
+  const pEvid2 = mkProj45('p45evid2', { requirement: REQ1 })
+  const childEv45 = { id: 'child-evid-45', session: { header: { cwd: ROOT, parentSession: 'sched-45' } } }
+  live['child-evid-45'] = childEv45
+  for (const h of askHandlers45) await h({ name: 'ask_user_question', agent: childEv45 }, { isError: false }, async () => {})
+  const svEvid245 = await runAs(ctx45, sched45, 'workflow_state_save', { root: pEvid2, requirementApproval: { by: 'user', note: '子会话问的不算' } })
+  check('45.16 反面:子会话调 ask_user_question **不算证据**(它本来就会被 DSH 拒 DELEGATED_CALLER)—— 只认 live runtime root 的提问,否则这条"外部事实"就成了自证的后门',
+    askHandlers45.length > 0
+    && svEvid245.requirementRegistration.evidenceMissing === true
+    && svEvid245.requirementRegistration.evidence === ''
+    && yes45(T45('workflow_state_save', svEvid245), '自证'),
+    `evidenceMissing=${svEvid245.requirementRegistration.evidenceMissing} evidence=${JSON.stringify(svEvid245.requirementRegistration.evidence)}`)
+
+  process.env.DSH_HOME = home0_45
 }
 
 console.log(`\n${'='.repeat(46)}\n冒烟结果: ${PASS} 通过 / ${FAIL} 失败`)
